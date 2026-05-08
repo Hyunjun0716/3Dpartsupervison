@@ -126,6 +126,9 @@ def train(it):
     batch = next(train_iter)
     x = batch['pointcloud'].to(args.device)
 
+    # Downsample to 1024 points for memory efficiency
+    x = downsample_pointcloud(x, target_num=1024)
+
     # Reset grad and model state
     optimizer.zero_grad()
     model.train()
@@ -153,6 +156,10 @@ def validate_loss(it):
         if args.num_val_batches > 0 and i >= args.num_val_batches:
             break
         ref = batch['pointcloud'].to(args.device)
+
+        # Downsample to 1024 points
+        ref = downsample_pointcloud(ref, target_num=1024)
+
         shift = batch['shift'].to(args.device)
         scale = batch['scale'].to(args.device)
         with torch.no_grad():

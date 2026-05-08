@@ -1,0 +1,25 @@
+============================================================
+EVALUATION RESULTS
+============================================================
+Checkpoint: /home/jun/diffusion-point-cloud/logs_gen/GEN_2025_11_30__01_59_45/ckpt_0.000000_500000.pt
+Number of samples: None
+Categories: ['chair', 'table']
+
+CD                            : 0.5381552577018738
+EMD                           : 0.0
+F-score@0.001                 : 1.0
+F-score@0.002                 : 1.0
+F-score@0.005                 : 1.0
+lgan_mmd-CD                   : 0.3908839225769043
+lgan_cov-CD                   : 0.010810811072587967
+lgan_mmd_smp-CD               : 0.2716970145702362
+1-NN-CD-acc_t                 : 1.0
+1-NN-CD-acc_f                 : 1.0
+1-NN-CD-acc                   : 1.0
+JSD                           : 0.1081732254496659
+CLIP-Score                    : 0.028643103316426277
+R-Precision@1                 : 0.0010810811072587967
+R-Precision@5                 : 0.0054054055362939835
+R-Precision@10                : 0.011891892179846764
+Median-Rank                   : 462.0
+MRR                           : 0.008132881484925747

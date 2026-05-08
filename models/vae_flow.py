@@ -9,10 +9,12 @@ from .flow import *
 
 class FlowVAE(Module):
 
-    def __init__(self, args):
+    def __init__(self, args, tokenizer=None):
         super().__init__()
         self.args = args
-        self.encoder = PointNetEncoder(args.latent_dim)
+
+        # Encoder (no part segmentation)
+        self.encoder = PointNetEncoder(zdim=args.latent_dim)
         self.flow = build_latent_flow(args)
 
         # Text dimension from CLIP (512 for CLIP base model)
@@ -21,7 +23,13 @@ class FlowVAE(Module):
         alignment_weight = getattr(args, 'alignment_weight', 0.1)
 
         self.diffusion = DiffusionPoint(
-            net = PointwiseNet(point_dim=3, context_dim=args.latent_dim, residual=args.residual, text_dim=text_dim),
+            net = PointwiseNet(
+                point_dim=3,
+                context_dim=args.latent_dim,
+                residual=args.residual,
+                text_dim=text_dim,
+                tokenizer=tokenizer  # Pass tokenizer for stop word filtering
+            ),
             var_sched = VarianceSchedule(
                 num_steps=args.num_steps,
                 beta_1=args.beta_1,
@@ -39,7 +47,8 @@ class FlowVAE(Module):
             text_emb: Text embeddings from CLIP. (B, text_dim). Optional.
         """
         batch_size, _, _ = x.size()
-        # print(x.size())
+
+        # Encode to latent space
         z_mu, z_sigma = self.encoder(x)
         z = reparameterize_gaussian(mean=z_mu, logvar=z_sigma)  # (B, F)
 
@@ -52,7 +61,12 @@ class FlowVAE(Module):
         log_pz = log_pw - delta_log_pw.view(batch_size, 1)  # (B, 1)
 
         # Negative ELBO of P(X|z)
-        neg_elbo = self.diffusion.get_loss(x, z, text_emb=text_emb, writer=writer, it=it)
+        neg_elbo = self.diffusion.get_loss(
+            x, z,
+            text_emb=text_emb,
+            writer=writer,
+            it=it
+        )
 
         # Loss
         loss_entropy = -entropy.mean()
@@ -64,17 +78,28 @@ class FlowVAE(Module):
             writer.add_scalar('train/loss_entropy', loss_entropy, it)
             writer.add_scalar('train/loss_prior', loss_prior, it)
             writer.add_scalar('train/loss_recons', loss_recons, it)
+            writer.add_scalar('train/loss_total', loss, it)
             writer.add_scalar('train/z_mean', z_mu.mean(), it)
             writer.add_scalar('train/z_mag', z_mu.abs().max(), it)
             writer.add_scalar('train/z_var', (0.5*z_sigma).exp().mean(), it)
 
         return loss
 
-    def sample(self, w, num_points, flexibility, text_emb=None, truncate_std=None):
+    def sample(self, w, num_points, flexibility, text_emb=None, truncate_std=None, return_attention=False):
+        """
+        Args:
+            w:  Input latent from flow prior, (B, F)
+            text_emb: Text embeddings from CLIP. (B, text_dim). Optional.
+            return_attention: If True, return attention weights along with samples
+        """
         batch_size, _ = w.size()
         if truncate_std is not None:
             w = truncated_normal_(w, mean=0, std=1, trunc_std=truncate_std)
+
         # Reverse: z <- w.
         z = self.flow(w, reverse=True).view(batch_size, -1)
-        samples = self.diffusion.sample(num_points, context=z, text_emb=text_emb, flexibility=flexibility)
-        return samples
+
+        return self.diffusion.sample(
+            num_points, context=z, text_emb=text_emb,
+            flexibility=flexibility, return_attention=return_attention
+        )

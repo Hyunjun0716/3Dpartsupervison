@@ -272,3 +272,56 @@ class ShapeNetCoreText(ShapeNetCore):
 
         return data
 
+
+class ShapeNetCoreTextWithParts(ShapeNetCoreText):
+    """
+    Extended version of ShapeNetCoreText that includes part segmentation labels
+    """
+
+    def __init__(self, path, cates, split, scale_mode, transform=None,
+                 captions_path=None, modelid_mapping_path=None,
+                 num_points=2048, use_fps=True):
+        """
+        Args:
+            path: Path to shapenet.hdf5
+            cates: Categories to load
+            split: 'train', 'val', or 'test'
+            scale_mode: Scaling mode for point clouds
+            transform: Optional transform
+            captions_path: Path to captions CSV
+            modelid_mapping_path: Path to model ID mapping
+            num_points: Number of points to use (for downsampling)
+            use_fps: Use Farthest Point Sampling (True) or random sampling (False)
+        """
+        super().__init__(path, cates, split, scale_mode, transform,
+                        captions_path, modelid_mapping_path)
+
+        self.num_points = num_points
+        self.use_fps = use_fps
+
+    def __getitem__(self, idx):
+        # Get base data (point cloud + caption)
+        data = super().__getitem__(idx)
+
+        # Ensure point cloud has correct number of points
+        pc = data['pointcloud']
+        if isinstance(pc, torch.Tensor):
+            pc_np = pc.numpy()
+        else:
+            pc_np = pc
+
+        N_current = pc_np.shape[0]
+        if N_current != self.num_points:
+            # Downsample point cloud to target size
+            if N_current > self.num_points:
+                indices = np.random.choice(N_current, self.num_points, replace=False)
+                pc_np = pc_np[indices]
+                data['pointcloud'] = torch.from_numpy(pc_np).float()
+            else:
+                # Pad with zeros if needed
+                pad_size = self.num_points - N_current
+                pc_np = np.vstack([pc_np, np.zeros((pad_size, 3))])
+                data['pointcloud'] = torch.from_numpy(pc_np).float()
+
+        return data
+

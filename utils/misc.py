@@ -160,3 +160,45 @@ def log_hyperparams(writer, args):
     writer.file_writer.add_summary(exp)
     writer.file_writer.add_summary(ssi)
     writer.file_writer.add_summary(sei)
+
+
+def downsample_pointcloud(pc, target_num=1024):
+    """
+    Downsample point cloud to target number of points.
+
+    Args:
+        pc: Point cloud tensor of shape (N, 3) or (B, N, 3)
+        target_num: Target number of points (default: 1024)
+
+    Returns:
+        Downsampled point cloud
+    """
+    if isinstance(pc, np.ndarray):
+        pc = torch.from_numpy(pc)
+
+    # Handle batch dimension
+    if pc.dim() == 3:
+        # Batch processing
+        batch_size, num_points, dim = pc.shape
+        if num_points <= target_num:
+            return pc
+
+        # Random sampling for each sample in batch
+        downsampled = []
+        for i in range(batch_size):
+            perm = torch.randperm(num_points)[:target_num]
+            downsampled.append(pc[i, perm])
+        return torch.stack(downsampled, dim=0)
+
+    elif pc.dim() == 2:
+        # Single point cloud
+        num_points, dim = pc.shape
+        if num_points <= target_num:
+            return pc
+
+        # Random sampling
+        perm = torch.randperm(num_points)[:target_num]
+        return pc[perm]
+
+    else:
+        raise ValueError(f"Unexpected point cloud shape: {pc.shape}")

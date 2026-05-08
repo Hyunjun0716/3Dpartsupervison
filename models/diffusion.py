@@ -75,13 +75,14 @@ class VarianceSchedule(Module):
 
 class PointwiseNet(Module):
 
-    def __init__(self, point_dim, context_dim, residual, text_dim=0, use_cross_attention=True):
+    def __init__(self, point_dim, context_dim, residual, text_dim=0, use_cross_attention=True, tokenizer=None):
         super().__init__()
         self.act = F.leaky_relu
         self.residual = residual
         self.text_dim = text_dim
         self.use_cross_attention = use_cross_attention and text_dim > 0
         self.use_film = use_cross_attention and text_dim > 0  # Enable FiLM when text is available
+        self.tokenizer = tokenizer  # For stop word filtering
 
         # Context dimension: time (3) + z_latent (context_dim)
         # Text is handled separately via FiLM and cross-attention to save memory
@@ -104,92 +105,138 @@ class PointwiseNet(Module):
             nn.Linear(context_dim * 2, context_dim)
         )
 
-        # Cross attention only once at 512-dim bottleneck (memory efficient)
+        # Multi-scale Cross Attention
+        # Apply attention at different feature dimensions for hierarchical text-shape alignment
         if self.use_cross_attention:
-            self.cross_attn = CrossAttention(
+            # 256-dim: Mid-level features (part structures like armrests, legs)
+            self.cross_attn_256 = CrossAttention(
+                query_dim=256,
+                context_dim=text_dim,
+                heads=4,  # Fewer heads for lower dimension
+                dim_head=64,
+                dropout=0.0,
+                use_stopword_filter=True,
+                stopword_penalty=0.1
+            )
+            self.cross_attn_norm_256 = nn.LayerNorm(256)
+
+            # 512-dim: High-level features (global semantics like category(chair), style)
+            self.cross_attn_512 = CrossAttention(
                 query_dim=512,
                 context_dim=text_dim,
-                heads=8,
+                heads=8,  # More heads for higher dimension
                 dim_head=64,
-                dropout=0.0
+                dropout=0.0,
+                use_stopword_filter=True,
+                stopword_penalty=0.1
             )
-            self.cross_attn_norm = nn.LayerNorm(512)
+            self.cross_attn_norm_512 = nn.LayerNorm(512)
 
         # FiLM modulation at 512-dim layers (layer 2 and 3)
         if self.use_film:
             self.film_1 = FiLM(text_dim, 512)
             self.film_2 = FiLM(text_dim, 512)
-        
 
-    def forward(self, x, beta, context, text_emb=None):
+
+    def forward(self, x, beta, context, text_emb=None, return_attention=False):
         """
-        Forward pass with hybrid conditioning.
+        Forward pass with multi-scale cross-attention
 
         Args:
             x: Noisy points (B, N, 3)
             beta: Diffusion timestep (B,)
             context: Shape latents from PointNet (B, z_dim)
-            text_emb: Text embeddings from CLIP.
-                     Can be dict with 'tokens' and 'pool', or tensor for backward compatibility.
+            text_emb: Text embeddings from CLIP (dict with 'tokens', 'pool', 'token_ids')
+            return_attention: If True, return attention weights
+
         Returns:
-            Predicted noise (B, N, 3)
+            Predicted noise (B, N, 3) or (predicted_noise, attention_weights) if return_attention=True
         """
         batch_size = x.size(0)
-        beta = beta.view(batch_size, 1, 1)  # (B, 1, 1)
+        beta = beta.view(batch_size, 1, 1)
 
-        # Time embedding
+        # 1. Prepare embeddings
         time_emb = torch.cat([beta, torch.sin(beta), torch.cos(beta)], dim=-1)  # (B, 1, 3)
+        z_latent = self.z_projection(context).view(batch_size, 1, -1)  # (B, 1, z_dim)
+        ctx_emb = torch.cat([time_emb, z_latent], dim=-1)  # (B, 1, 3+z_dim)
 
-        # Process latent code (make it more expressive)
-        z_latent = self.z_projection(context)  # (B, z_dim)
-        z_latent = z_latent.view(batch_size, 1, -1)  # (B, 1, z_dim)
-
-        # Parse text embeddings
-        text_tokens = None  # For cross attention (local)
-        text_pool = None    # For FiLM and hybrid context (global)
-
+        # 2. Parse text embeddings
+        text_tokens, text_pool, token_ids = None, None, None
         if text_emb is not None:
             if isinstance(text_emb, dict):
-                text_tokens = text_emb.get('tokens', None)  # (B, seq_len, text_dim)
-                text_pool = text_emb.get('pool', None)      # (B, text_dim)
+                text_tokens = text_emb.get('tokens')    # (B, seq_len, 512) for cross-attention
+                text_pool = text_emb.get('pool')        # (B, 512) for FiLM
+                token_ids = text_emb.get('token_ids')   # (B, seq_len) for stop word filtering
             else:
                 # Backward compatibility
-                if text_emb.dim() == 2:
-                    text_pool = text_emb  # (B, text_dim)
-                else:
-                    text_tokens = text_emb  # (B, seq_len, text_dim)
+                text_pool = text_emb if text_emb.dim() == 2 else None
+                text_tokens = text_emb if text_emb.dim() == 3 else None
 
-        # Context: time + z_latent (text is handled separately via FiLM/cross-attention)
-        ctx_emb = torch.cat([time_emb, z_latent], dim=-1)  # (B, 1, 3 + z_dim)
+        # 3. Forward through MLP with multi-scale cross-attention
+        attention_weights_256 = None
+        attention_weights_512 = None
 
-        # Forward through point-wise MLP
-        out = x
-        for i, layer in enumerate(self.layers):
-            # Apply FiLM BEFORE layer 3 (when features are still 512-dim)
-            if i == 3 and self.use_film and text_pool is not None:
-                out = self.film_2(out, text_pool)
+        # Layer 0: 3 -> 128
+        out = self.layers[0](ctx=ctx_emb, x=x)
+        out = self.act(out)
 
-            # Apply layer
-            out = layer(ctx=ctx_emb, x=out)
+        # Layer 1: 128 -> 256 + Cross-Attention (mid-level: part structures)
+        out = self.layers[1](ctx=ctx_emb, x=out)
+        if self.use_cross_attention and text_tokens is not None:
+            out_norm = self.cross_attn_norm_256(out)
+            if return_attention:
+                attn_out, attention_weights_256 = self.cross_attn_256(
+                    out_norm, text_tokens, return_attention=True,
+                    token_ids=token_ids, tokenizer=self.tokenizer
+                )
+            else:
+                attn_out = self.cross_attn_256(
+                    out_norm, text_tokens, return_attention=False,
+                    token_ids=token_ids, tokenizer=self.tokenizer
+                )
+            out = out + 0.5 * attn_out
+        out = self.act(out)
 
-            # Apply cross-attention and FiLM AFTER layer 2 (when features become 512-dim)
-            if i == 2:
-                if self.use_cross_attention and text_tokens is not None:
-                    residual = out
-                    out = self.cross_attn_norm(out)
-                    out = residual + self.cross_attn(out, text_tokens)
+        # Layer 2: 256 -> 512 + Cross-Attention (high-level)
+        out = self.layers[2](ctx=ctx_emb, x=out)
+        if self.use_cross_attention and text_tokens is not None:
+            out_norm = self.cross_attn_norm_512(out)
+            if return_attention:
+                attn_out, attention_weights_512 = self.cross_attn_512(
+                    out_norm, text_tokens, return_attention=True,
+                    token_ids=token_ids, tokenizer=self.tokenizer
+                )
+            else:
+                attn_out = self.cross_attn_512(
+                    out_norm, text_tokens, return_attention=False,
+                    token_ids=token_ids, tokenizer=self.tokenizer
+                )
+            out = out + 0.5 * attn_out
+        if self.use_film and text_pool is not None:
+            out = self.film_1(out, text_pool)
+        out = self.act(out)
 
-                if self.use_film and text_pool is not None:
-                    out = self.film_1(out, text_pool)
+        # Layer 3: 512 -> 256
+        if self.use_film and text_pool is not None:
+            out = self.film_2(out, text_pool)
+        out = self.layers[3](ctx=ctx_emb, x=out)
+        out = self.act(out)
 
-            # Activation (except last layer)
-            if i < len(self.layers) - 1:
-                out = self.act(out)
+        # Layer 4: 256 -> 128
+        out = self.layers[4](ctx=ctx_emb, x=out)
+        out = self.act(out)
 
-        if self.residual:
-            return x + out
-        else:
-            return out
+        # Layer 5: 128 -> 3
+        out = self.layers[5](ctx=ctx_emb, x=out)
+
+        # Residual connection and return
+        result = x + out if self.residual else out
+
+        if return_attention:
+            # Return both 256-dim and 512-dim attention weights for multi-scale analysis
+            return result, {'attn_256': attention_weights_256, 'attn_512': attention_weights_512}
+
+        return result
 
 
 class DiffusionPoint(Module):
@@ -206,15 +253,12 @@ class DiffusionPoint(Module):
             from .encoders import PointNetEncoder
             self.shape_encoder = PointNetEncoder(zdim=512)  # Match CLIP dimension
 
-    def get_loss(self, x_0, context, text_emb=None, t=None, writer=None, it=None, visualize_freq=500):
+    def get_loss(self, x_0, context, text_emb=None, t=None, writer=None, it=None):
         """
         Args:
             x_0:  Input point cloud, (B, N, d).
             context:  Shape latent, (B, F).
             text_emb: Text embeddings from CLIP (dict or tensor). Optional.
-            writer: TensorBoard writer for visualization.
-            it: Current iteration number.
-            visualize_freq: Frequency of visualization.
         """
         batch_size, _, point_dim = x_0.size()
         if t == None:
@@ -246,7 +290,8 @@ class DiffusionPoint(Module):
 
                 # Encode predicted shape to CLIP space
                 # Use detach() to prevent gradient backprop through x_0_pred (saves memory)
-                shape_features, _ = self.shape_encoder(x_0_pred.detach())  # (B, 512), ignore variance
+                z_mu, z_sigma = self.shape_encoder(x_0_pred.detach())
+                shape_features = z_mu  # (B, 512)
 
                 # Compute cosine similarity (maximize = negative loss)
                 # Normalize features
@@ -270,10 +315,12 @@ class DiffusionPoint(Module):
 
         return loss_total
 
-    def sample(self, num_points, context, text_emb=None, point_dim=3, flexibility=0.0, ret_traj=False):
+    def sample(self, num_points, context, text_emb=None, point_dim=3, flexibility=0.0, ret_traj=False, return_attention=False):
         batch_size = context.size(0)
         x_T = torch.randn([batch_size, num_points, point_dim]).to(context.device)
         traj = {self.var_sched.num_steps: x_T}
+        attention_weights = None
+
         for t in range(self.var_sched.num_steps, 0, -1):
             z = torch.randn_like(x_T) if t > 1 else torch.zeros_like(x_T)
             alpha = self.var_sched.alphas[t]
@@ -285,15 +332,21 @@ class DiffusionPoint(Module):
 
             x_t = traj[t]
             beta = self.var_sched.betas[[t]*batch_size]
-            e_theta = self.net(x_t, beta=beta, context=context, text_emb=text_emb)
+
+            # Get attention weights from the final denoising step
+            if return_attention and t == 1:
+                e_theta, attention_weights = self.net(x_t, beta=beta, context=context, text_emb=text_emb, return_attention=True)
+            else:
+                e_theta = self.net(x_t, beta=beta, context=context, text_emb=text_emb)
+
             x_next = c0 * (x_t - c1 * e_theta) + sigma * z
             traj[t-1] = x_next.detach()     # Stop gradient and save trajectory.
             traj[t] = traj[t].cpu()         # Move previous output to CPU memory.
             if not ret_traj:
                 del traj[t]
 
-        if ret_traj:
-            return traj
-        else:
-            return traj[0]
+        result = traj if ret_traj else traj[0]
 
+        if return_attention:
+            return result, attention_weights
+        return result

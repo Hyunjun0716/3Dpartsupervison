@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 from transformers import CLIPTextModel, CLIPTokenizer
 
-
 class FrozenCLIPTextEmbedder(nn.Module):
     """
     Uses the CLIP text encoder to encode text into embeddings.
@@ -27,13 +26,15 @@ class FrozenCLIPTextEmbedder(nn.Module):
         """
         Args:
             text: list of strings or a single string
+
         Returns:
-            If return_sequence=True:
-                dict with:
-                    'tokens': (B, seq_len, 512) - full token sequence for cross attention
-                    'pool': (B, 512) - pooled output for FiLM conditioning
+            If return_sequence=True: dict with:
+                'tokens': (B, seq_len, 512)
+                'pool': (B, 512)
+                'token_ids': (B, seq_len)
+
             If return_sequence=False:
-                embeddings: (B, 512) - pooled output only (backward compatibility)
+                pooled embeddings only (B, 512)
         """
         if isinstance(text, str):
             text = [text]
@@ -53,15 +54,14 @@ class FrozenCLIPTextEmbedder(nn.Module):
         with torch.no_grad():
             outputs = self.transformer(input_ids=tokens)
 
-            if self.return_sequence:
-                # Return both token sequence and pooled output
-                return {
-                    'tokens': outputs.last_hidden_state,  # (B, seq_len, 512) - for cross attention
-                    'pool': outputs.pooler_output         # (B, 512) - for FiLM
-                }
-            else:
-                # Backward compatibility: return pooled output only
-                return outputs.pooler_output
+        if self.return_sequence:
+            return {
+                'tokens': outputs.last_hidden_state,   # (B, seq_len, 512)
+                'pool': outputs.pooler_output,         # (B, 512)
+                'token_ids': tokens                    # (B, seq_len)
+            }
+        else:
+            return outputs.pooler_output
 
     def encode(self, text):
         """Alias for forward"""

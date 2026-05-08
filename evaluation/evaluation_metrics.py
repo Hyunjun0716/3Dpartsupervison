@@ -347,6 +347,142 @@ def _jsdiv(P, Q):
     return 0.5 * (_kldiv(P_, M) + _kldiv(Q_, M))
 
 
+def compute_zero_shot_accuracy(
+    sample_pcs,
+    true_labels,
+    class_names,
+    shape_encoder,
+    text_encoder,
+    batch_size=8,
+    templates=None,
+    device='cuda'
+):
+    """
+    Compute zero-shot classification accuracy using CLIP alignment.
+
+    Args:
+        sample_pcs: (N, num_points, 3) Generated point clouds
+        true_labels: (N,) Ground truth class indices
+        class_names: List of class names (e.g., ['chair', 'table', ...])
+        shape_encoder: PointNetEncoder model (zdim=512) trained with CLIP alignment
+        text_encoder: FrozenCLIPTextEmbedder for encoding class names
+        batch_size: Batch size for processing
+        templates: List of prompt templates. If None, uses default templates.
+        device: Device to run computation on
+
+    Returns:
+        dict with:
+            'top1_acc': Top-1 accuracy
+            'top5_acc': Top-5 accuracy (if num_classes >= 5)
+            'mean_rank': Mean rank of true class
+    """
+    if templates is None:
+        # Default templates for 3D objects
+        templates = [
+            'a 3d model of a {}',
+            'a {} object',
+            'a point cloud of a {}',
+            'a 3d point cloud of a {}',
+            'a rendered 3d model of a {}',
+        ]
+
+    shape_encoder.eval()
+    text_encoder.eval()
+
+    N = sample_pcs.shape[0]
+    num_classes = len(class_names)
+
+    # Step 1: Encode class names with multiple templates and average
+    print("Encoding class names with CLIP text encoder...")
+    class_embeddings = []
+
+    with torch.no_grad():
+        for class_name in tqdm(class_names, desc='Encoding classes'):
+            # Create prompts from all templates
+            prompts = [template.format(class_name) for template in templates]
+
+            # Encode all prompts
+            text_outputs = text_encoder(prompts)
+            if isinstance(text_outputs, dict):
+                # Use pooled output for zero-shot classification
+                embeddings = text_outputs['pool']  # (num_templates, 512)
+            else:
+                embeddings = text_outputs  # (num_templates, 512)
+
+            # Average across templates and normalize
+            avg_embedding = embeddings.mean(dim=0)  # (512,)
+            avg_embedding = avg_embedding / avg_embedding.norm(dim=-1, keepdim=True)
+            class_embeddings.append(avg_embedding)
+
+    # Stack all class embeddings: (num_classes, 512)
+    class_embeddings = torch.stack(class_embeddings, dim=0).to(device)
+
+    # Step 2: Encode point clouds with shape encoder
+    print("Encoding point clouds with shape encoder...")
+    shape_embeddings = []
+
+    with torch.no_grad():
+        for i in tqdm(range(0, N, batch_size), desc='Encoding point clouds'):
+            batch = sample_pcs[i:i+batch_size].to(device)
+
+            # PointNetEncoder returns (mean, logvar)
+            shape_mean, _ = shape_encoder(batch)  # (B, 512)
+
+            # Normalize embeddings
+            shape_mean = shape_mean / shape_mean.norm(dim=-1, keepdim=True)
+            shape_embeddings.append(shape_mean.cpu())
+
+    # Concatenate all shape embeddings: (N, 512)
+    shape_embeddings = torch.cat(shape_embeddings, dim=0).to(device)
+
+    # Step 3: Compute cosine similarity and predict
+    print("Computing predictions...")
+    # Temperature scaling (learned during training, using default 100 as in CLIP)
+    temperature = 100.0
+
+    # Compute logits: (N, num_classes)
+    logits = temperature * (shape_embeddings @ class_embeddings.T)
+
+    # Get predictions
+    predictions = logits.argmax(dim=-1)  # (N,)
+
+    # Convert true_labels to tensor if needed
+    if isinstance(true_labels, np.ndarray):
+        true_labels = torch.from_numpy(true_labels)
+    true_labels = true_labels.to(device)
+
+    # Compute Top-1 accuracy
+    top1_correct = (predictions == true_labels).float().sum()
+    top1_acc = top1_correct / N
+
+    # Compute Top-5 accuracy if applicable
+    top5_acc = None
+    if num_classes >= 5:
+        top5_preds = logits.topk(5, dim=-1)[1]  # (N, 5)
+        top5_correct = (top5_preds == true_labels.unsqueeze(1)).any(dim=1).float().sum()
+        top5_acc = top5_correct / N
+
+    # Compute mean rank
+    sorted_indices = logits.argsort(dim=-1, descending=True)  # (N, num_classes)
+    ranks = (sorted_indices == true_labels.unsqueeze(1)).nonzero(as_tuple=True)[1] + 1
+    mean_rank = ranks.float().mean()
+
+    results = {
+        'top1_acc': top1_acc.item(),
+        'mean_rank': mean_rank.item(),
+    }
+
+    if top5_acc is not None:
+        results['top5_acc'] = top5_acc.item()
+
+    print(f"Zero-shot Top-1 Accuracy: {results['top1_acc']:.4f}")
+    if top5_acc is not None:
+        print(f"Zero-shot Top-5 Accuracy: {results['top5_acc']:.4f}")
+    print(f"Mean Rank: {results['mean_rank']:.2f}")
+
+    return results
+
+
 if __name__ == '__main__':
     a = torch.randn([16, 2048, 3]).cuda()
     b = torch.randn([16, 2048, 3]).cuda()
