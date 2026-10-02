@@ -9,9 +9,9 @@ Research code for generating 3D point clouds from natural-language descriptions 
 
 ## Overview
 
-![Overview of the diffusion point-cloud framework](assets/images/overview.png)
+![Overview of the text-conditioned diffusion model for 3D point cloud generation](assets/images/overview.png)
 
-*Original overview figure, retained without modification from [Luo and Hu's diffusion-point-cloud implementation](https://github.com/luost26/diffusion-point-cloud). It illustrates the baseline framework extended in this project.*
+*Overview of the text-conditioned diffusion architecture. Author-provided figure, reproduced without modification.*
 
 This work conditions point-cloud denoising on both individual text tokens and sentence-level semantics. A frozen CLIP text encoder supplies token embeddings for cross-attention and pooled features for FiLM modulation. Stop-word-aware reweighting reduces attention to predefined low-information words while preserving the token sequence.
 
@@ -33,7 +33,7 @@ Lower MMD-CD and JSD indicate closer distributions; higher coverage indicates br
 
 These are publication results, not measurements from a fresh run of this checkout. Raw script outputs may use different scales; match the paper's normalization, splits and evaluation settings before comparing.
 
-Qualitative result figures for the text-conditioned model are not included in this checkout. The overview above is a baseline illustration, not a figure reporting this paper's experimental results.
+Qualitative result figures for the text-conditioned model are not included in this checkout. The overview above illustrates the model architecture.
 
 ## Quick start
 

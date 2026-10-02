@@ -1,7 +1,7 @@
 # README images
 
-`images/overview.png` is the original, unmodified `teaser.png` from the upstream diffusion-point-cloud implementation. It illustrates the baseline diffusion framework, not a result of the text-conditioned paper.
+`images/overview.png` is the author-provided `overviewing.png`, reproduced byte-for-byte without cropping, resizing or redrawing. It illustrates the text-conditioned point-cloud diffusion architecture with token cross-attention, stop-word reweighting and FiLM conditioning.
 
-Source: https://github.com/luost26/diffusion-point-cloud
+The figure labels its text encoder as CLIP ViT-L/14. The current code default remains `openai/clip-vit-base-patch32`; consult the checkpoint configuration for the encoder used in a particular experiment.
 
-No verified qualitative result images for the text-conditioned paper are currently included. Add author-provided figures here with prompt/caption and checkpoint or paper-figure provenance before displaying them as experimental results.
+This replaces the earlier upstream baseline teaser. Verified qualitative result figures should include the originating prompt and checkpoint or paper-figure provenance.
