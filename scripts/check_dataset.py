@@ -1,6 +1,8 @@
 """
 Test loading the table+chair dataset with captions
 """
+
+from utils.paths import project_path
 import torch
 from utils.dataset import ShapeNetCoreText
 
@@ -9,12 +11,12 @@ print("Testing table+chair dataset loading...")
 print("="*60)
 
 dataset = ShapeNetCoreText(
-    path='./data/shapenet_tablechair.hdf5',
+    path=project_path('data/shapenet_tablechair.hdf5'),
     cates=['chair', 'table'],
     split='train',
     scale_mode='shape_unit',
-    captions_path='./data/captions.tablechair.csv',
-    modelid_mapping_path='./data/modelid_mapping_tablechair.json',
+    captions_path=project_path('data/captions.tablechair.csv'),
+    modelid_mapping_path=project_path('data/modelid_mapping_tablechair.json'),
 )
 
 print(f"\nDataset loaded successfully!")

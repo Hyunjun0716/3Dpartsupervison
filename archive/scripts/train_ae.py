@@ -1,3 +1,5 @@
+
+from utils.paths import project_path
 import os
 import argparse
 import torch
@@ -26,7 +28,7 @@ parser.add_argument('--residual', type=eval, default=True, choices=[True, False]
 parser.add_argument('--resume', type=str, default=None)
 
 # Datasets and loaders
-parser.add_argument('--dataset_path', type=str, default='./data/shapenet.hdf5')
+parser.add_argument('--dataset_path', type=str, default=project_path('data/shapenet.hdf5'))
 parser.add_argument('--categories', type=str_list, default=['airplane'])
 parser.add_argument('--scale_mode', type=str, default='shape_unit')
 parser.add_argument('--train_batch_size', type=int, default=128)
@@ -44,7 +46,7 @@ parser.add_argument('--sched_end_epoch', type=int, default=300*THOUSAND)
 # Training
 parser.add_argument('--seed', type=int, default=2020)
 parser.add_argument('--logging', type=eval, default=True, choices=[True, False])
-parser.add_argument('--log_root', type=str, default='./logs_ae')
+parser.add_argument('--log_root', type=str, default=project_path('logs_ae'))
 parser.add_argument('--device', type=str, default='cuda')
 parser.add_argument('--max_iters', type=int, default=float('inf'))
 parser.add_argument('--val_freq', type=float, default=1000)

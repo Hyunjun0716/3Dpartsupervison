@@ -1,3 +1,4 @@
-# Results
+# Generated outputs
 
-Generation and decoding results will be saved here.
+Local evaluation and generation outputs are written here and ignored by Git.
+Curated README images belong in `assets/images/`.

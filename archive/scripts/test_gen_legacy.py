@@ -5,6 +5,8 @@ For checkpoints trained with earlier versions that may not have:
 - Cross-attention
 - Stop word filtering
 """
+
+from utils.paths import project_path
 import os
 import time
 import math
@@ -44,10 +46,10 @@ def normalize_point_clouds(pcs, mode, logger):
 parser = argparse.ArgumentParser()
 parser.add_argument('--ckpt', type=str, required=True, help='Path to checkpoint file')
 parser.add_argument('--categories', type=str_list, default=['chair'], help='Categories to test')
-parser.add_argument('--save_dir', type=str, default='./results_legacy')
+parser.add_argument('--save_dir', type=str, default=project_path('results_legacy'))
 parser.add_argument('--device', type=str, default='cuda')
 # Datasets and loaders
-parser.add_argument('--dataset_path', type=str, default='./data/shapenet.hdf5')
+parser.add_argument('--dataset_path', type=str, default=project_path('data/shapenet.hdf5'))
 parser.add_argument('--batch_size', type=int, default=64)
 # Sampling (will be overridden by checkpoint's sample_num_points)
 parser.add_argument('--sample_num_points', type=int, default=None, help='Override checkpoint sample_num_points (if None, use checkpoint value)')
@@ -55,7 +57,7 @@ parser.add_argument('--normalize', type=str, default='shape_unit', choices=[None
 parser.add_argument('--seed', type=int, default=9988)
 # Text conditioning - for legacy checkpoints
 parser.add_argument('--use_text_condition', type=eval, default=True, choices=[True, False], help='Use text conditioning (will auto-detect from checkpoint)')
-parser.add_argument('--captions_path', type=str, default='/home/jun/diffusion-point-cloud/data/chairs_only.csv', help='Path to captions CSV file')
+parser.add_argument('--captions_path', type=str, default=project_path('data/chairs_only.csv'), help='Path to captions CSV file')
 args = parser.parse_args()
 
 

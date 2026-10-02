@@ -9,41 +9,16 @@ Research code for generating 3D point clouds from natural-language descriptions 
 
 ## Overview
 
-A caption can specify both an object category and its shape attributes. This work studies how to incorporate that information into point-cloud denoising through **token-level cross-attention**, **sentence-level feature modulation**, and **stop-word-aware attention reweighting**.
+![Overview of the diffusion point-cloud framework](assets/images/overview.png)
 
-The paper evaluates chair and table generation, examines token attention, and reports an ablation of attention reweighting. Fine-grained attribute grounding and generalization beyond the evaluated categories remain limitations.
+*Original overview figure, retained without modification from [Luo and Hu's diffusion-point-cloud implementation](https://github.com/luost26/diffusion-point-cloud). It illustrates the baseline framework extended in this project.*
 
-## Method and implementation
+This work conditions point-cloud denoising on both individual text tokens and sentence-level semantics. A frozen CLIP text encoder supplies token embeddings for cross-attention and pooled features for FiLM modulation. Stop-word-aware reweighting reduces attention to predefined low-information words while preserving the token sequence.
 
-The current generator uses a PointNet shape encoder and a pointwise diffusion denoiser. Both Gaussian and flow-based latent-prior variants are available. The text encoder is frozen.
+The current generator uses a PointNet shape encoder and a pointwise diffusion denoiser, with Gaussian or flow-based latent priors. Chair and table are the evaluated categories. Fine-grained attribute grounding and broader category generalization remain limitations.
 
-```mermaid
-flowchart TD
-    A["Natural-language caption"] --> B["Frozen CLIP text encoder"]
-    B --> C["Token features and token IDs"]
-    B --> D["Pooled sentence features"]
-    C --> E["Cross-attention with stop-word reweighting"]
-    D --> F["FiLM feature modulation"]
-    G["Noisy points, timestep and shape latent"] --> H["Pointwise denoiser"]
-    E --> H
-    F --> H
-    H --> I["Reverse diffusion sampling"]
-    I --> J["Generated 3D point cloud"]
-```
+## Results
 
-| Component | Current implementation |
-| --- | --- |
-| Text encoding | `FrozenCLIPTextEmbedder` returns token embeddings, pooled features and token IDs; the default CLIP model is `openai/clip-vit-base-patch32`. |
-| Token conditioning | Point features query text tokens through cross-attention at the 256- and 512-dimensional feature stages. |
-| Sentence conditioning | FiLM modulates denoiser features using the pooled text representation. |
-| Stop-word reweighting | After softmax, attention at recognized stop-word positions is multiplied by 0.1 by default, then renormalized. Tokens remain in the sequence. |
-| Shape latent | `FlowVAE` and `GaussianVAE` use `PointNetEncoder`. A PointCNN implementation is also retained in the repository. |
-| Sampling | Iterative denoising generates point coordinates from Gaussian noise, conditioned on text and a sampled shape latent. |
-| Attention inspection | The denoiser can return attention weights from both conditioning stages. |
-
-The directory name reflects earlier development. The current generator does not require part-segmentation labels.
-
-## Published results
 
 The following values are reported in the [published abstract](https://www.kci.go.kr/kciportal/landing/article.kci?arti_id=ART003355453), using its reporting scale.
 
@@ -58,115 +33,65 @@ Lower MMD-CD and JSD indicate closer distributions; higher coverage indicates br
 
 These are publication results, not measurements from a fresh run of this checkout. Raw script outputs may use different scales; match the paper's normalization, splits and evaluation settings before comparing.
 
-## Repository guide
+Qualitative result figures for the text-conditioned model are not included in this checkout. The overview above is a baseline illustration, not a figure reporting this paper's experimental results.
 
-| Path | Purpose |
-| --- | --- |
-| [train_gen.py](train_gen.py) | Train a text-conditioned generator. |
-| [test_gen.py](test_gen.py) | Generate samples from a checkpoint and compute CD-based distribution metrics and JSD. |
-| [models/clip_encoder.py](models/clip_encoder.py) | Frozen CLIP text encoder. |
-| [models/attention.py](models/attention.py) | Cross-attention and stop-word reweighting. |
-| [models/diffusion.py](models/diffusion.py) | Denoiser, FiLM, diffusion schedule, losses and sampling. |
-| [models/vae_flow.py](models/vae_flow.py) / [models/vae_gaussian.py](models/vae_gaussian.py) | Generator variants. |
-| [utils/dataset.py](utils/dataset.py) | Point-cloud loading and model-ID-based caption matching. |
-| [create_tablechair_hdf5.py](create_tablechair_hdf5.py) | Chair/table HDF5 preparation helper. |
-| [visualize_random_captions.py](visualize_random_captions.py) / [visualize_training_samples.py](visualize_training_samples.py) | Generation and attention visualization tools. |
-| [ATTENTION_VISUALIZATION_GUIDE.md](ATTENTION_VISUALIZATION_GUIDE.md) | Additional visualization documentation. |
-| [EVALUATION_GUIDE.md](EVALUATION_GUIDE.md) | Additional evaluation documentation; check the scripts for current arguments. |
+## Quick start
 
-Legacy autoencoder and generation scripts remain available for earlier experiments.
-
-## Setup
-
-Clone the repository:
+Install a PyTorch build compatible with your GPU, then install the remaining dependencies:
 
 ```bash
 git clone https://github.com/Hyunjun0716/3Dpartsupervison.git
 cd 3Dpartsupervison
+python -m pip install -r requirements.txt
 ```
 
-Use a Python environment with a PyTorch build appropriate for your GPU and CUDA installation. The text-conditioned code imports `transformers` and `pandas` in addition to the scientific-computing dependencies:
+Prepare the external point clouds, captions and model-ID mapping using the [data guide](docs/data.md). No dataset or trained checkpoint is bundled.
+
+Run commands **from the repository root**:
 
 ```bash
-python -m pip install numpy scipy h5py pandas tqdm tensorboard scikit-learn matplotlib transformers
+# Train on chair and table captions
+python -m scripts.train --categories chair,table --device cuda
+
+# Generate samples and evaluate a trained checkpoint
+python -m scripts.generate --ckpt pretrained/YOUR_CHECKPOINT.pt --categories chair
+
+# Render custom prompts as point clouds
+python -m scripts.visualize --ckpt pretrained/YOUR_CHECKPOINT.pt \
+    --captions_file examples/captions/custom.txt --sample_num_points 1024 --grid_only
 ```
 
-Install PyTorch separately for your hardware. CLIP model/tokenizer files are downloaded on first use unless cached.
+These are example commands; replace the checkpoint path with your own. Training has no finite iteration limit by default; set `--max_iters` for a bounded run. The dependency list is not a fully pinned reproduction environment.
 
-**Environment status:** [env.yml](env.yml) is a legacy environment snapshot with Python 3.7, PyTorch 1.6 and CUDA 10.1. It omits text-conditioning dependencies and is not a complete environment specification for the current code. A fully pinned environment for the present checkout is not provided.
+Default data, output and log paths resolve from the repository location. Explicit CLI paths are relative to your working directory or may be absolute. All active text-data entry points use `data/modelid_mapping_tablechair.json` by default; no duplicate mapping copy is needed.
 
-## Data preparation
+## Repository layout
 
-Prepare these external files before training:
-
-| File | Expected contents |
+| Folder | Contents |
 | --- | --- |
-| `data/shapenet_tablechair.hdf5` | Chair (`03001627`) and table (`04379243`) groups, each containing `train`, `val` and `test` point-cloud arrays of shape `(num_shapes, num_points, 3)`. |
-| `data/captions.tablechair.csv` | At least the columns `modelId` and `description`. |
-| `data/modelid_mapping_tablechair.json` | Keys such as `03001627_train`; each entry contains an `available_model_ids` list aligned with the HDF5 row order. |
+| [scripts/](scripts/) | Training, generation, visualization, preprocessing and data/log checks. |
+| [models/](models/) | CLIP conditioning, attention, diffusion and latent-prior networks. |
+| [utils/](utils/) | Data loading, shared utilities and repository-relative defaults. |
+| [evaluation/](evaluation/) | Evaluation metric implementations. |
+| [docs/](docs/) | Setup, data schema, execution and implementation guides. |
+| [assets/](assets/) | README figures and their provenance. |
+| [examples/captions/](examples/captions/) | Example and saved test prompts. |
+| [archive/](archive/) | Earlier scripts, environment snapshot and historical reports. |
+| [data/](data/) / [pretrained/](pretrained/) | Local external datasets and checkpoints. |
+| [results/](results/) | Local generated outputs, ignored by Git. |
 
-`ShapeNetCoreText` retains shapes with matching model IDs in the caption dictionary. Check that each mapping list follows the actual stored point-cloud order, especially if source files were skipped during preprocessing.
+Model and utility module names remain unchanged for checkpoint compatibility. Older root script names have been replaced by the module commands above; see the [migration table](docs/usage.md).
 
-[create_tablechair_hdf5.py](create_tablechair_hdf5.py) contains machine-specific paths that must be adapted before use. Its default preprocessing stores 2,048 points per shape; the current training loop downsamples to 1,024 points.
+## Documentation
 
-Datasets and trained checkpoints are not bundled in `data/` or `pretrained/`.
-
-## Training
-
-Example invocation using the current command-line interface:
-
-```bash
-python train_gen.py \
-    --model flow \
-    --dataset_path ./data/shapenet_tablechair.hdf5 \
-    --captions_path ./data/captions.tablechair.csv \
-    --categories chair,table \
-    --use_text_condition True \
-    --train_batch_size 8 \
-    --device cuda
-```
-
-The training script currently uses `./data/modelid_mapping_tablechair.json` directly. Place the corresponding mapping there even if you override the dataset or caption paths.
-
-The default latent dimension is 256 and the default diffusion schedule has 100 steps. Training runs without a finite iteration limit by default; set `--max_iters` for a bounded run. Use `--resume` to resume from a checkpoint.
-
-Inspect the available options:
-
-```bash
-python train_gen.py --help
-```
-
-The implementation also includes an optional alignment-loss branch. Its predicted point cloud is detached before entering the auxiliary shape encoder, so this branch does not directly backpropagate through that predicted cloud into the denoiser. Consult the code when designing loss ablations.
-
-## Generation and evaluation
-
-Replace the checkpoint path below with your own trained checkpoint. The example requires the prepared test data and caption files.
-
-`test_gen.py` defaults to `./data/modelid_mapping.json`, whereas training uses the table/chair mapping filename. For this dataset, copy the same mapping to the test loader's expected location:
-
-```bash
-cp ./data/modelid_mapping_tablechair.json ./data/modelid_mapping.json
-
-python test_gen.py \
-    --ckpt ./pretrained/YOUR_CHECKPOINT.pt \
-    --dataset_path ./data/shapenet_tablechair.hdf5 \
-    --captions_path ./data/captions.tablechair.csv \
-    --categories chair,table \
-    --use_text_condition True \
-    --sample_num_points 1024 \
-    --batch_size 8 \
-    --device cuda
-```
-
-Evaluate categories separately when comparing with the publication's per-category table, using `--categories chair` or `--categories table`.
-
-By default, generation uses captions from the test set. Add `--text_prompt "a chair with armrests"` to use one prompt for all generated samples in that evaluation run. This script still loads a reference dataset.
-
-Generated point clouds are saved as `out.npy` in a timestamped directory under `results/`. The script reports MMD-CD, COV-CD, 1-NN-CD and JSD. EMD is not implemented in the current evaluation path.
-
-Keep the point count, normalization, reference split and sample count consistent across comparisons. Training-time validation scores and final test scores may use different settings.
+- [Data preparation and caption matching](docs/data.md)
+- [Training, generation, visualization and path migration](docs/usage.md)
+- [Implementation details](docs/implementation.md)
+- [Attention visualization](docs/attention_visualization.md)
+- [Earlier experiments](archive/README.md)
 
 ## Citation
+
 
 If you use this work, please cite:
 
@@ -187,6 +112,4 @@ If you use this work, please cite:
 
 This project builds on [Diffusion Probabilistic Models for 3D Point Cloud Generation](https://arxiv.org/abs/2103.01458) by Shitong Luo and Wei Hu and the [original implementation](https://github.com/luost26/diffusion-point-cloud).
 
-The repository retains the original [MIT License](LICENSE) and copyright notice.
-
-Questions about this implementation can be raised in [this repository's issue tracker](https://github.com/Hyunjun0716/3Dpartsupervison/issues).
+The repository retains the original [MIT License](LICENSE) and copyright notice. Please raise implementation questions in [this repository's issue tracker](https://github.com/Hyunjun0716/3Dpartsupervison/issues).

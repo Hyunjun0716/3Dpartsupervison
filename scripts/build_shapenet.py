@@ -1,6 +1,8 @@
 """
 Build ShapeNet HDF5 dataset from raw .txt point cloud files
 """
+
+from utils.paths import project_path
 import h5py
 import numpy as np
 import os
@@ -48,7 +50,7 @@ def load_train_test_split(data_dir, synsetid):
     else:
         return None
 
-def build_hdf5_dataset(data_dir='./data', output_file='./data/shapenet.hdf5', num_points=2048):
+def build_hdf5_dataset(data_dir=project_path('data'), output_file=project_path('data/shapenet.hdf5'), num_points=2048):
     """Build HDF5 dataset from raw ShapeNet .txt files"""
 
     print(f"Building ShapeNet HDF5 dataset...")
@@ -136,8 +138,8 @@ def build_hdf5_dataset(data_dir='./data', output_file='./data/shapenet.hdf5', nu
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_dir', type=str, default='./data', help='Directory containing raw ShapeNet files')
-    parser.add_argument('--output', type=str, default='./data/shapenet.hdf5', help='Output HDF5 file path')
+    parser.add_argument('--data_dir', type=str, default=project_path('data'), help='Directory containing raw ShapeNet files')
+    parser.add_argument('--output', type=str, default=project_path('data/shapenet.hdf5'), help='Output HDF5 file path')
     parser.add_argument('--num_points', type=int, default=2048, help='Number of points per shape')
     args = parser.parse_args()
 

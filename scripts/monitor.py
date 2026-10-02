@@ -1,12 +1,19 @@
 """
 Check training progress from tensorboard logs
 """
+
+from utils.paths import project_path
+import argparse
 import os
 import glob
 from tensorboard.backend.event_processing import event_accumulator
 
+parser = argparse.ArgumentParser(description='Inspect the latest training log')
+parser.add_argument('--log_root', default=project_path('logs_gen'))
+args = parser.parse_args()
+
 # Find latest log directory
-log_dirs = sorted(glob.glob('/home/jun/diffusion-point-cloud/logs_gen/GEN_*'))
+log_dirs = sorted(glob.glob(os.path.join(args.log_root, 'GEN_*')))
 latest_log = log_dirs[-1] if log_dirs else None
 
 if latest_log:

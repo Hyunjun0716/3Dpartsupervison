@@ -1,0 +1,13 @@
+# Install a hardware-compatible PyTorch build separately.
+numpy
+scipy
+h5py
+pandas
+tqdm
+tensorboard
+scikit-learn
+matplotlib
+transformers
+# Visualization tools
+open3d
+Pillow

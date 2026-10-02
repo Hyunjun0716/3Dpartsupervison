@@ -1,11 +1,14 @@
 """
 Create HDF5 file for chair and table categories combined
 """
-import h5py
-import numpy as np
+
+from utils.paths import project_path
+import argparse
+from pathlib import Path
 import os
-from tqdm import tqdm
 import json
+
+DATA_DIR = Path(project_path('data'))
 
 # Category mappings
 synsetid_to_cate = {
@@ -16,17 +19,17 @@ synsetid_to_cate = {
 def load_points_and_labels(category_id, model_id, num_points=2048):
     """Load point cloud and part labels for a given model"""
     # Try .pts format (chair)
-    base_path = f'/home/jun/diffusion-point-cloud/data/{category_id}/points/{model_id}.pts'
-    label_path = f'/home/jun/diffusion-point-cloud/data/{category_id}/points_label/{model_id}.seg'
+    base_path = str(DATA_DIR / f'{category_id}/points/{model_id}.pts')
+    label_path = str(DATA_DIR / f'{category_id}/points_label/{model_id}.seg')
 
     if not os.path.exists(base_path):
         # Try alternative path for chair
-        base_path = f'/home/jun/diffusion-point-cloud/data/chair_part/{category_id}/points/{model_id}.pts'
-        label_path = f'/home/jun/diffusion-point-cloud/data/chair_part/{category_id}/points_label/{model_id}.seg'
+        base_path = str(DATA_DIR / f'chair_part/{category_id}/points/{model_id}.pts')
+        label_path = str(DATA_DIR / f'chair_part/{category_id}/points_label/{model_id}.seg')
 
     if not os.path.exists(base_path):
         # Try .txt format (table)
-        base_path = f'/home/jun/diffusion-point-cloud/data/{category_id}/{model_id}.txt'
+        base_path = str(DATA_DIR / f'{category_id}/{model_id}.txt')
 
     if not os.path.exists(base_path):
         return None, None
@@ -69,15 +72,15 @@ def process_category(category_id, category_name, num_points=2048):
     print(f"\nProcessing {category_name} (ID: {category_id})...")
 
     # Find points directory and files
-    points_dir = f'/home/jun/diffusion-point-cloud/data/{category_id}/points'
+    points_dir = str(DATA_DIR / f'{category_id}/points')
     file_extension = '.pts'
 
     if not os.path.exists(points_dir):
-        points_dir = f'/home/jun/diffusion-point-cloud/data/chair_part/{category_id}/points'
+        points_dir = str(DATA_DIR / f'chair_part/{category_id}/points')
 
     if not os.path.exists(points_dir):
         # Try .txt format (table)
-        points_dir = f'/home/jun/diffusion-point-cloud/data/{category_id}'
+        points_dir = str(DATA_DIR / f'{category_id}')
         file_extension = '.txt'
 
     if not os.path.exists(points_dir):
@@ -85,7 +88,7 @@ def process_category(category_id, category_name, num_points=2048):
         return {}, {}
 
     # Get all model IDs
-    model_files = [f for f in os.listdir(points_dir) if f.endswith(file_extension)]
+    model_files = sorted(f for f in os.listdir(points_dir) if f.endswith(file_extension))
     model_ids = [f[:f.rfind(file_extension)] for f in model_files]  # Remove extension
 
     print(f"Found {len(model_ids)} models for {category_name}")
@@ -104,6 +107,8 @@ def process_category(category_id, category_name, num_points=2048):
         'val': val_ids,
         'test': test_ids
     }
+
+    stored_model_ids = {name: [] for name in splits_data}
 
     for split_name, split_ids in split_model_ids.items():
         print(f"Processing {split_name} split ({len(split_ids)} models)...")
@@ -125,6 +130,7 @@ def process_category(category_id, category_name, num_points=2048):
 
             sampled_points = points[indices]
             splits_data[split_name].append(sampled_points)
+            stored_model_ids[split_name].append(model_id)
 
     # Convert to numpy arrays
     for split_name in splits_data:
@@ -136,7 +142,7 @@ def process_category(category_id, category_name, num_points=2048):
 
     # Prepare model ID mapping for this category
     model_id_mapping = {}
-    for split_name, split_ids in split_model_ids.items():
+    for split_name, split_ids in stored_model_ids.items():
         # split_ids is already a list from numpy array conversion
         if isinstance(split_ids, np.ndarray):
             split_ids_list = split_ids.tolist()
@@ -150,9 +156,22 @@ def process_category(category_id, category_name, num_points=2048):
     return splits_data, model_id_mapping
 
 def main():
-    output_path = '/home/jun/diffusion-point-cloud/data/shapenet_tablechair.hdf5'
-    mapping_path = '/home/jun/diffusion-point-cloud/data/modelid_mapping_tablechair.json'
-    num_points = 2048
+    global DATA_DIR, h5py, np, tqdm
+    parser = argparse.ArgumentParser(description='Prepare matched chair/table point clouds')
+    parser.add_argument('--data_dir', default=project_path('data'))
+    parser.add_argument('--output', default=project_path('data/shapenet_tablechair.hdf5'))
+    parser.add_argument('--mapping_output', default=project_path('data/modelid_mapping_tablechair.json'))
+    parser.add_argument('--num_points', type=int, default=2048)
+    args = parser.parse_args()
+    import h5py
+    import numpy as np
+    from tqdm import tqdm
+    DATA_DIR = Path(args.data_dir)
+    output_path = args.output
+    mapping_path = args.mapping_output
+    num_points = args.num_points
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(mapping_path).parent.mkdir(parents=True, exist_ok=True)
 
     print(f"Creating HDF5 file: {output_path}")
     print(f"Number of points per model: {num_points}")

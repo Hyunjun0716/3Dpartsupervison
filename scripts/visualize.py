@@ -6,6 +6,8 @@ This script:
 3. Renders them as 2D images using Open3D's PointCloud renderer
 """
 
+from utils.paths import project_path
+
 import os
 import argparse
 import torch
@@ -700,7 +702,7 @@ def main(args):
 
     # Load model
     print("[INFO] Loading model...")
-    if 'latent_flow_depth' in ckpt['args']:
+    if getattr(ckpt['args'], 'model', 'gaussian') == 'flow':
         print("[INFO] Model type: FlowVAE")
         model = FlowVAE(ckpt['args'], tokenizer=text_encoder.tokenizer).to(args.device)
     else:
@@ -1009,7 +1011,7 @@ def main(args):
         f.write("RANDOM CAPTION POINT CLOUD GENERATION SUMMARY\n")
         f.write("="*80 + "\n\n")
         f.write(f"Checkpoint: {args.ckpt}\n")
-        f.write(f"Model type: {'FlowVAE' if 'latent_flow_depth' in ckpt['args'] else 'GaussianVAE'}\n")
+        f.write(f"Model type: {'FlowVAE' if getattr(ckpt['args'], 'model', 'gaussian') == 'flow' else 'GaussianVAE'}\n")
         f.write(f"Iteration: {ckpt.get('iteration', 'unknown')}\n\n")
         f.write(f"Number of samples: {len(selected_captions)}\n")
         f.write(f"Points per cloud: {args.sample_num_points}\n")
@@ -1042,7 +1044,7 @@ if __name__ == '__main__':
     caption_group.add_argument('--captions_file', type=str,
                         help='Path to text file with captions (one per line)')
     caption_group.add_argument('--custom_captions', type=str, nargs='+',
-                        default='./data/captions.tablechair.csv',
+                        default=project_path('data/captions.tablechair.csv'),
                         help='Custom captions from command line')
 
     # Sampling
@@ -1104,7 +1106,7 @@ if __name__ == '__main__':
                         help='Number of intermediate steps to visualize in denoising process (default: 5)')
 
     # Output
-    parser.add_argument('--save_dir', type=str, default='./random_caption_visualizations',
+    parser.add_argument('--save_dir', type=str, default=project_path('random_caption_visualizations'),
                         help='Directory to save outputs')
     parser.add_argument('--save_pointclouds', action='store_true',
                         help='Save point clouds as numpy arrays')

@@ -1,3 +1,5 @@
+
+from utils.paths import project_path
 import os
 import time
 import math
@@ -38,10 +40,10 @@ def normalize_point_clouds(pcs, mode, logger):
 parser = argparse.ArgumentParser()
 parser.add_argument('--ckpt', type=str, required=True, help='Path to checkpoint file')
 parser.add_argument('--categories', type=str_list, default=['chair'], help='Categories to test')
-parser.add_argument('--save_dir', type=str, default='./results')
+parser.add_argument('--save_dir', type=str, default=project_path('results'))
 parser.add_argument('--device', type=str, default='cuda')
 # Datasets and loaders
-parser.add_argument('--dataset_path', type=str, default='./data/shapenet.hdf5')
+parser.add_argument('--dataset_path', type=str, default=project_path('data/shapenet_tablechair.hdf5'))
 parser.add_argument('--batch_size', type=int, default=64)
 # Sampling
 parser.add_argument('--sample_num_points', type=int, default=1024)
@@ -50,8 +52,9 @@ parser.add_argument('--seed', type=int, default=9988)
 # Text conditioning
 parser.add_argument('--use_text_condition', type=eval, default=True, choices=[True, False])
 parser.add_argument('--text_prompt', type=str, default=None, help='Text prompt for conditional generation (if None, uses default)')
-parser.add_argument('--captions_path', type=str, default='/home/jun/diffusion-point-cloud/data/chairs_only.csv', help='Path to captions CSV file')
+parser.add_argument('--captions_path', type=str, default=project_path('data/captions.tablechair.csv'), help='Path to captions CSV file')
 parser.add_argument('--clip_model', type=str, default='openai/clip-vit-base-patch32', help='CLIP model version')
+parser.add_argument('--modelid_mapping_path', type=str, default=project_path('data/modelid_mapping_tablechair.json'))
 args = parser.parse_args()
 
 
@@ -79,6 +82,7 @@ if args.use_text_condition and args.captions_path:
         split='test',
         scale_mode=args.normalize,
         captions_path=args.captions_path,
+        modelid_mapping_path=args.modelid_mapping_path,
     )
     logger.info(f'Using ShapeNetCoreText dataset with captions from {args.captions_path}')
 else:

@@ -2,6 +2,8 @@
 Comprehensive evaluation script for text-conditioned point cloud generation
 Evaluates: CD, EMD, F-score, MMD, FPD, JSD, CLIP-Score, CLIP R-Precision
 """
+
+from utils.paths import project_path
 import os
 import argparse
 import torch
@@ -283,20 +285,20 @@ def compute_clip_metrics(model, generated, captions, text_encoder, device='cuda'
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--checkpoint', type=str,
-                       default='/home/jun/diffusion-point-cloud/logs_gen/GEN_2025_11_30__01_59_45/ckpt_0.000000_500000.pt',
+                       required=True,
                        help='Path to checkpoint')
     parser.add_argument('--dataset_path', type=str,
-                       default='./data/shapenet_tablechair.hdf5')
+                       default=project_path('data/shapenet_tablechair.hdf5'))
     parser.add_argument('--captions_path', type=str,
-                       default='./data/captions.tablechair.csv')
+                       default=project_path('data/captions.tablechair.csv'))
     parser.add_argument('--modelid_mapping_path', type=str,
-                       default='./data/modelid_mapping_tablechair.json')
+                       default=project_path('data/modelid_mapping_tablechair.json'))
     parser.add_argument('--num_samples', type=int, default=None,
                        help='Number of samples to generate for evaluation (None = use all test samples)')
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--seed', type=int, default=2020)
-    parser.add_argument('--output', type=str, default='./evaluation_results.txt')
+    parser.add_argument('--output', type=str, default=project_path('evaluation_results.txt'))
 
     args = parser.parse_args()
     seed_all(args.seed)

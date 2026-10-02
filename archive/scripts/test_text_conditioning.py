@@ -2,13 +2,18 @@
 Test if text conditioning is working properly
 Generate samples with specific captions and check if they differ
 """
+
+from utils.paths import project_path
+import argparse
 import torch
 import numpy as np
 from models.vae_flow import FlowVAE
 from models.clip_encoder import FrozenCLIPTextEmbedder
 
 # Load model
-checkpoint_path = '/home/jun/diffusion-point-cloud/logs_gen/GEN_2025_11_30__01_59_45/ckpt_0.000000_500000.pt'
+parser = argparse.ArgumentParser(description='Legacy text-conditioning diagnostic')
+parser.add_argument('--checkpoint', required=True)
+checkpoint_path = parser.parse_args().checkpoint
 checkpoint = torch.load(checkpoint_path, map_location='cuda', weights_only=False)
 args = checkpoint['args']
 

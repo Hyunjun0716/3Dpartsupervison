@@ -4,6 +4,7 @@ from copy import copy
 import torch
 from torch.utils.data import Dataset
 import numpy as np
+from utils.paths import project_path
 import h5py
 import pandas as pd
 from tqdm.auto import tqdm
@@ -53,7 +54,7 @@ class ShapeNetCore(Dataset):
         self.scale_mode = scale_mode
         self.transform = transform
         self.captions_path = captions_path
-        self.modelid_mapping_path = modelid_mapping_path if modelid_mapping_path else './data/modelid_mapping.json'
+        self.modelid_mapping_path = modelid_mapping_path if modelid_mapping_path else project_path('data/modelid_mapping_tablechair.json')
 
         self.pointclouds = []
         self.stats = None

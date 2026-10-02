@@ -1,3 +1,5 @@
+
+from utils.paths import project_path
 import os
 import math
 import argparse
@@ -36,12 +38,12 @@ parser.add_argument('--spectral_norm', type=eval, default=False, choices=[True,F
 
 parser.add_argument('--use_text_condition', type=eval, default=True, choices=[True,False])
 parser.add_argument('--text_dim', type=int, default=512)
-parser.add_argument('--captions_path', type=str, default='./data/captions.tablechair.csv')
+parser.add_argument('--captions_path', type=str, default=project_path('data/captions.tablechair.csv'))
 parser.add_argument('--clip_model', type=str, default='openai/clip-vit-base-patch32')
 parser.add_argument('--use_alignment_loss', type=eval, default=True)
 parser.add_argument('--alignment_weight', type=float, default=0.1)
 
-parser.add_argument('--dataset_path', type=str, default='./data/shapenet_tablechair.hdf5')
+parser.add_argument('--dataset_path', type=str, default=project_path('data/shapenet_tablechair.hdf5'))
 parser.add_argument('--categories', type=str_list, default=['chair', 'table'])
 parser.add_argument('--scale_mode', type=str, default='shape_unit')
 parser.add_argument('--train_batch_size', type=int, default=8)
@@ -58,7 +60,7 @@ parser.add_argument('--sched_end_epoch', type=int, default=100*THOUSAND)
 # Training arguments
 parser.add_argument('--seed', type=int, default=2020)
 parser.add_argument('--logging', type=eval, default=True, choices=[True, False])
-parser.add_argument('--log_root', type=str, default='./logs_gen')
+parser.add_argument('--log_root', type=str, default=project_path('logs_gen'))
 parser.add_argument('--device', type=str, default='cuda')
 parser.add_argument('--max_iters', type=int, default=float('inf'))
 parser.add_argument('--val_freq', type=int, default=10000)
@@ -67,6 +69,7 @@ parser.add_argument('--test_size', type=int, default=400)
 parser.add_argument('--tag', type=str, default=None)
 parser.add_argument('--resume', type=str, default=None)
 
+parser.add_argument('--modelid_mapping_path', type=str, default=project_path('data/modelid_mapping_tablechair.json'))
 args = parser.parse_args()
 seed_all(args.seed)
 
@@ -95,7 +98,7 @@ train_dset = ShapeNetCoreText(
     split='train',
     scale_mode=args.scale_mode,
     captions_path=args.captions_path,
-    modelid_mapping_path='./data/modelid_mapping_tablechair.json',
+    modelid_mapping_path=args.modelid_mapping_path,
 )
 val_dset = ShapeNetCoreText(
     path=args.dataset_path,
@@ -103,7 +106,7 @@ val_dset = ShapeNetCoreText(
     split='val',
     scale_mode=args.scale_mode,
     captions_path=args.captions_path,
-    modelid_mapping_path='./data/modelid_mapping_tablechair.json',
+    modelid_mapping_path=args.modelid_mapping_path,
 )
 
 # Define collate function for text dataset

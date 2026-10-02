@@ -7,6 +7,8 @@ This script:
 4. Saves visualizations as images
 """
 
+from utils.paths import project_path
+
 import os
 import argparse
 import torch
@@ -644,7 +646,7 @@ def main(args):
     print(f"[INFO] Loading checkpoint from: {args.ckpt}")
 
     # Load checkpoint
-    ckpt = torch.load(args.ckpt, map_location=args.device)
+    ckpt = torch.load(args.ckpt, map_location=args.device, weights_only=False)
 
     print(f"[INFO] Loaded checkpoint from iteration {ckpt.get('iteration', 'unknown')}")
 
@@ -661,7 +663,7 @@ def main(args):
         print("[WARNING] Model was trained without text conditioning!")
 
     # Determine model type from checkpoint and pass tokenizer
-    if 'latent_flow_depth' in ckpt['args']:
+    if getattr(ckpt['args'], 'model', 'gaussian') == 'flow':
         print("[INFO] Model type: FlowVAE")
         model = FlowVAE(ckpt['args'], tokenizer=text_encoder.tokenizer if text_encoder else None).to(args.device)
     else:
@@ -713,6 +715,7 @@ def main(args):
             split='test',
             scale_mode=args.normalize,
             captions_path=args.captions_path,
+            modelid_mapping_path=args.modelid_mapping_path,
         )
 
         print(f"[INFO] Dataset size: {len(train_dataset)}")
@@ -1162,13 +1165,16 @@ if __name__ == '__main__':
 
     # Dataset
     parser.add_argument('--dataset_path', type=str,
-                        default='./data/shapenet_tablechair.hdf5',
+                        default=project_path('data/shapenet_tablechair.hdf5'),
                         help='Path to HDF5 dataset')
     parser.add_argument('--categories', type=str, nargs='+', default=['table'],
                         help='Categories to visualize')
     parser.add_argument('--captions_path', type=str,
-                        default='./data/captions.tablechair.csv',
+                        default=project_path('data/captions.tablechair.csv'),
                         help='Path to captions CSV file')
+
+    parser.add_argument('--modelid_mapping_path', type=str,
+                        default=project_path('data/modelid_mapping_tablechair.json'))
 
     # Sampling
     parser.add_argument('--num_samples', type=int, default=20,
@@ -1191,7 +1197,7 @@ if __name__ == '__main__':
                         help='Point cloud normalization mode')
 
     # Output
-    parser.add_argument('--save_dir', type=str, default='./visualizations',
+    parser.add_argument('--save_dir', type=str, default=project_path('visualizations'),
                         help='Directory to save visualizations')
     parser.add_argument('--samples_per_page', type=int, default=5,
                         help='Number of samples per visualization page')
