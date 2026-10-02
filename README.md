@@ -1,151 +1,192 @@
-# Diffusion-Point-Cloud (PointCNN version)
+# Text-Conditioned Diffusion Model for 3D Point Cloud Generation
 
-This project is based on the open source implementation of the paper [**“Diffusion Probabilistic Models for 3D Point Cloud Generation”**](https://arxiv.org/abs/2103.01458), extending its original version and replacing the **backbone** of point cloud feature extraction from **PointNet** to **PointCNN**. This version achieves better generation quality and diversity on several 3D point cloud datasets.
+**Hyunjun Jang · Jung chan-Cho**  
+*The Journal of Korean Institute of Next Generation Computing*, 22(3), 101–116, June 2026.
 
----
+[Paper / DOI](https://doi.org/10.23019/kingpc.22.3.202606.007) · [KCI](https://www.kci.go.kr/kciportal/landing/article.kci?arti_id=ART003355453) · [Publisher listing](https://www.earticle.net/Article/A487575)
 
-## Project Introduction
+Research code for generating 3D point clouds from natural-language descriptions using a CLIP-conditioned diffusion model.
 
-In the original paper, the authors applied diffusion probabilistic models to the task of 3D point cloud generation and proposed a denoising model based on PointNet as a feature extraction network. By defining the forward denoising process in the training phase, the model learns the inverse denoising process, so that high-fidelity target point clouds can be gradually sampled from Gaussian noise point clouds during inference.
+## Overview
 
-However, although **PointNet** is simple and effective to implement, its ability to express local structures is relatively limited. To this end, we replaced **PointNet** with [**PointCNN**](https://arxiv.org/abs/1801.07791) to enhance the ability to extract local neighborhood geometric information, thereby achieving better performance in generating finer local details and shape diversity.
+A caption can specify both an object category and its shape attributes. This work studies how to incorporate that information into point-cloud denoising through **token-level cross-attention**, **sentence-level feature modulation**, and **stop-word-aware attention reweighting**.
 
----
+The paper evaluates chair and table generation, examines token attention, and reports an ablation of attention reweighting. Fine-grained attribute grounding and generalization beyond the evaluated categories remain limitations.
 
-## Major updates
+## Method and implementation
 
-1. **Feature extraction network: switch from PointNet to PointCNN**
-- **PointCNN** introduces the X-Conv operation, first performs a learnable transformation on the neighborhood point set, and then performs a convolution-like aggregation, so that the model can better capture the local geometric structure and the relationship between points.
-- Compared with PointNet, which only uses MLP for each point and performs global pooling, PointCNN can more effectively retain and integrate local-global information and improve the representation of complex 3D shapes.
-- With this change, the model has better performance in local detail restoration and generation diversity.
+The current generator uses a PointNet shape encoder and a pointwise diffusion denoiser. Both Gaussian and flow-based latent-prior variants are available. The text encoder is frozen.
 
-2. **Training stability**
-- Further optimize the hyperparameters, including batch size, learning rate, etc., to adapt to the deep network structure of PointCNN.
-- Experiments show that there is a certain degree of improvement in common evaluation indicators (such as Coverage, MMD, Chamfer Distance, etc.).
-
-3. **Overall performance improvement**
-- Compared with the original PointNet version, the generated 3D point cloud is more realistic and natural in both overall structure and local details.
-
----
-
-## Environment requirements
-
-- Python 3.7+
-- PyTorch >= 1.7 (compatible with CUDA 10.2 / 11.x)
-- Common scientific computing and visualization libraries such as Numpy, Scipy, Matplotlib
-- [Open3D](http://www.open3d.org/) (optional, used for point cloud operations, etc.)
-- [PyTorch Geometric](https://pytorch-geometric.readthedocs.io/) (if your PointCNN implementation relies on PyG's neighborhood search and other functions)
-
-**[Option 1]** Please first install the required libraries according to [env.yml](./env.yml) in this repository or according to the dependencies listed in the main branch:
-```bash
-# Create the environment
-conda env create -f env.yml
-# Activate the environment
-conda activate dpm-pc-gen
+```mermaid
+flowchart TD
+    A["Natural-language caption"] --> B["Frozen CLIP text encoder"]
+    B --> C["Token features and token IDs"]
+    B --> D["Pooled sentence features"]
+    C --> E["Cross-attention with stop-word reweighting"]
+    D --> F["FiLM feature modulation"]
+    G["Noisy points, timestep and shape latent"] --> H["Pointwise denoiser"]
+    E --> H
+    F --> H
+    H --> I["Reverse diffusion sampling"]
+    I --> J["Generated 3D point cloud"]
 ```
-**[Option 2]** Or you may setup the environment manually (**If you are using GPUs that only work with CUDA 11 or greater**).
 
-Our model only depends on the following commonly used packages, all of which can be installed via conda.
+| Component | Current implementation |
+| --- | --- |
+| Text encoding | `FrozenCLIPTextEmbedder` returns token embeddings, pooled features and token IDs; the default CLIP model is `openai/clip-vit-base-patch32`. |
+| Token conditioning | Point features query text tokens through cross-attention at the 256- and 512-dimensional feature stages. |
+| Sentence conditioning | FiLM modulates denoiser features using the pooled text representation. |
+| Stop-word reweighting | After softmax, attention at recognized stop-word positions is multiplied by 0.1 by default, then renormalized. Tokens remain in the sequence. |
+| Shape latent | `FlowVAE` and `GaussianVAE` use `PointNetEncoder`. A PointCNN implementation is also retained in the repository. |
+| Sampling | Iterative denoising generates point coordinates from Gaussian noise, conditioned on text and a sampled shape latent. |
+| Attention inspection | The denoiser can return attention weights from both conditioning stages. |
 
-| Package      | Version                          |
-| ------------ | -------------------------------- |
-| PyTorch      | ≥ 1.7.0                          |
-| h5py         | *not specified* (we used 4.61.1) |
-| tqdm         | *not specified*                  |
-| tensorboard  | *not specified* (we used 2.5.0)  |
-| numpy        | *not specified* (we used 1.20.2) |
-| scipy        | *not specified* (we used 1.6.2)  |
-| scikit-learn | *not specified* (we used 0.24.2) |
+The directory name reflects earlier development. The current generator does not require part-segmentation labels.
 
+## Published results
+
+The following values are reported in the [published abstract](https://www.kci.go.kr/kciportal/landing/article.kci?arti_id=ART003355453), using its reporting scale.
+
+| Category | MMD-CD | COV-CD (%) | 1-NN-CD (%) | JSD |
+| --- | ---: | ---: | ---: | ---: |
+| Chair | 6.80 | 49.75 | 77.99 | 9.6 |
+| Table | 6.33 | 43.75 | 71.75 | 13.2 |
+
+In the chair ablation, stop-word-aware reweighting increased COV-CD from **37.18% to 49.75%** and reduced JSD from **12.2 to 9.6**.
+
+Lower MMD-CD and JSD indicate closer distributions; higher coverage indicates broader reference-set coverage. For balanced generated/reference sets, 1-NN accuracy near 50% indicates less distinguishable distributions.
+
+These are publication results, not measurements from a fresh run of this checkout. Raw script outputs may use different scales; match the paper's normalization, splits and evaluation settings before comparing.
+
+## Repository guide
+
+| Path | Purpose |
+| --- | --- |
+| [train_gen.py](train_gen.py) | Train a text-conditioned generator. |
+| [test_gen.py](test_gen.py) | Generate samples from a checkpoint and compute CD-based distribution metrics and JSD. |
+| [models/clip_encoder.py](models/clip_encoder.py) | Frozen CLIP text encoder. |
+| [models/attention.py](models/attention.py) | Cross-attention and stop-word reweighting. |
+| [models/diffusion.py](models/diffusion.py) | Denoiser, FiLM, diffusion schedule, losses and sampling. |
+| [models/vae_flow.py](models/vae_flow.py) / [models/vae_gaussian.py](models/vae_gaussian.py) | Generator variants. |
+| [utils/dataset.py](utils/dataset.py) | Point-cloud loading and model-ID-based caption matching. |
+| [create_tablechair_hdf5.py](create_tablechair_hdf5.py) | Chair/table HDF5 preparation helper. |
+| [visualize_random_captions.py](visualize_random_captions.py) / [visualize_training_samples.py](visualize_training_samples.py) | Generation and attention visualization tools. |
+| [ATTENTION_VISUALIZATION_GUIDE.md](ATTENTION_VISUALIZATION_GUIDE.md) | Additional visualization documentation. |
+| [EVALUATION_GUIDE.md](EVALUATION_GUIDE.md) | Additional evaluation documentation; check the scripts for current arguments. |
+
+Legacy autoencoder and generation scripts remain available for earlier experiments.
+
+## Setup
+
+Clone the repository:
+
+```bash
+git clone https://github.com/Hyunjun0716/3Dpartsupervison.git
+cd 3Dpartsupervison
+```
+
+Use a Python environment with a PyTorch build appropriate for your GPU and CUDA installation. The text-conditioned code imports `transformers` and `pandas` in addition to the scientific-computing dependencies:
+
+```bash
+python -m pip install numpy scipy h5py pandas tqdm tensorboard scikit-learn matplotlib transformers
+```
+
+Install PyTorch separately for your hardware. CLIP model/tokenizer files are downloaded on first use unless cached.
+
+**Environment status:** [env.yml](env.yml) is a legacy environment snapshot with Python 3.7, PyTorch 1.6 and CUDA 10.1. It omits text-conditioning dependencies and is not a complete environment specification for the current code. A fully pinned environment for the present checkout is not provided.
 
 ## Data preparation
 
-### Dataset
+Prepare these external files before training:
 
-- **It is recommended to use ShapeNet, ModelNet and other common 3D shape datasets for experiments. **
-- **Download and unzip the corresponding dataset to the `data/` directory (you can also specify the path yourself) according to actual needs. **
+| File | Expected contents |
+| --- | --- |
+| `data/shapenet_tablechair.hdf5` | Chair (`03001627`) and table (`04379243`) groups, each containing `train`, `val` and `test` point-cloud arrays of shape `(num_shapes, num_points, 3)`. |
+| `data/captions.tablechair.csv` | At least the columns `modelId` and `description`. |
+| `data/modelid_mapping_tablechair.json` | Keys such as `03001627_train`; each entry contains an `available_model_ids` list aligned with the HDF5 row order. |
 
-### Preprocessing
+`ShapeNetCoreText` retains shapes with matching model IDs in the caption dictionary. Check that each mapping list follows the actual stored point-cloud order, especially if source files were skipped during preprocessing.
 
-- For each 3D object, downsample/normalize it to a fixed number of points (such as 1024 points) as needed, and convert it to `.xyz` or `.npy` format.
-- The above steps can be completed in the script `data_preprocess.py`, and the preprocessing results are stored in the specified folder.
-- For details, please refer to the main branch and expect to remain consistent
+[create_tablechair_hdf5.py](create_tablechair_hdf5.py) contains machine-specific paths that must be adapted before use. Its default preprocessing stores 2,048 points per shape; the current training loop downsamples to 1,024 points.
 
-## Configuration file
-
-- Set model hyperparameters, training hyperparameters, dataset path and other information in `configs/pointcnn_config.yaml`.
-- Core parameters include:
-- `num_points`: The number of points in each point cloud (such as 1024).
-- `batch_size`: Training batch size.
-- `learning_rate`: Initial learning rate.
-- `diffusion_steps`: The number of steps in the diffusion process.
-- `model`: Specify **PointCNN** as the feature extraction network.
-
-
-## About the EMD Metric
-
-We have removed the EMD module due to GPU compatability issues. The legacy code can be found on the `emd-cd` branch.
-
-If you have to compute the EMD score or compare our model with others, we strongly advise you to use your own code to compute the metrics. The generation and decoding results will be saved to the `results` folder after each test run.
+Datasets and trained checkpoints are not bundled in `data/` or `pretrained/`.
 
 ## Training
 
-```bash
-# Train an auto-encoder
-python train_ae.py 
-
-# Train a generator
-python train_gen.py
-```
-
-You may specify the value of arguments. Please find the available arguments in the script. 
-
-Note that `--categories` can take `all` (use all the categories in the dataset), `airplane`, `chair` (use a single category), or `airplane,chair` (use multiple categories, separated by commas).
-
-### Notes on the Metrics
-
-Note that the metrics computed during the validation stage in the training script (`train_gen.py`, `train_ae.py`) are not comparable to the metrics reported by the test scripts (`test_gen.py`, `test_ae.py`). ***If you train your own models, please evaluate them using the test scripts***. The differences include:
-1. The scale of Chamfer distance in the training script is different. In the test script, we renormalize the bounding boxes of all the point clouds before calculating the metrics (Line 100, `test_gen.py`). However, in the validation stage of training, we do not renormalize the point clouds.
-2. During the validation stage of training, we only use a subset of the validation set (400 point clouds) to compute the metrics and generates only 400 point clouds (controlled by the `--test_size` parameter). Limiting the number to 400 is for saving time. However, the actual size of the `airplane` validation set is 607, larger than 400. Less point clouds mean that it is less likely to find similar point clouds in the validation set for a generated point cloud. Hence, it would lead to a worse Minimum-Matching-Distance (MMD) score even if we renormalize the shapes during the validation stage in the training script.
-
-
-## Testing
+Example invocation using the current command-line interface:
 
 ```bash
-# Test an auto-encoder
-python test_ae.py --ckpt ./pretrained/AE_all.pt --categories all
-
-# Test a generator
-python test_gen.py --ckpt ./pretrained/GEN_airplane.pt --categories airplane
+python train_gen.py \
+    --model flow \
+    --dataset_path ./data/shapenet_tablechair.hdf5 \
+    --captions_path ./data/captions.tablechair.csv \
+    --categories chair,table \
+    --use_text_condition True \
+    --train_batch_size 8 \
+    --device cuda
 ```
 
+The training script currently uses `./data/modelid_mapping_tablechair.json` directly. Place the corresponding mapping there even if you override the dataset or caption paths.
 
+The default latent dimension is 256 and the default diffusion schedule has 100 steps. Training runs without a finite iteration limit by default; set `--max_iters` for a bounded run. Use `--resume` to resume from a checkpoint.
 
+Inspect the available options:
 
-## Experimental results and performance
+```bash
+python train_gen.py --help
+```
 
-Compared with the original **PointNet** version, **PointCNN** as the backbone network can capture richer local geometric structures, thus achieving improvements in **Coverage (COV)**, **Minimum Matching Distance (MMD)**, and **1-NNA** indicators:
+The implementation also includes an optional alignment-loss branch. Its predicted point cloud is detached before entering the auxiliary shape encoder, so this branch does not directly backpropagate through that predicted cloud into the denoiser. Consult the code when designing loss ablations.
 
-The following are the local test results of the current setting on the Airplane data:
+## Generation and evaluation
 
-| Method                  | COV-CD (↑) | COV-EMD (↑) | MMD-CD (↓) | MMD-EMD (↓) | 1-NNA-CD (↓) | 1-NNA-EMD (↓) |
-|-----------------------|-----------|------------|-----------|------------|--------------|---------------|
-| **PointNet (Original)**   | 48.71%     | 45.47%          | 3.276    | 1.061          | 64.83%     | 75.12%             |
-| **PointCNN (This project)** |  48.83%   |  45.60%        |  3.109   |  0.998     |   64.56%    |  75.05%       |
+Replace the checkpoint path below with your own trained checkpoint. The example requires the prepared test data and caption files.
 
+`test_gen.py` defaults to `./data/modelid_mapping.json`, whereas training uses the table/chair mapping filename. For this dataset, copy the same mapping to the test loader's expected location:
 
-## References
+```bash
+cp ./data/modelid_mapping_tablechair.json ./data/modelid_mapping.json
 
-- [Diffusion Probabilistic Models for 3D Point Cloud Generation](https://arxiv.org/abs/2103.01458)
-Shitong Luo, Wei Hu
+python test_gen.py \
+    --ckpt ./pretrained/YOUR_CHECKPOINT.pt \
+    --dataset_path ./data/shapenet_tablechair.hdf5 \
+    --captions_path ./data/captions.tablechair.csv \
+    --categories chair,table \
+    --use_text_condition True \
+    --sample_num_points 1024 \
+    --batch_size 8 \
+    --device cuda
+```
 
-- [PointCNN: Convolution On X-Transformed Points](https://arxiv.org/abs/1801.07791)
-Yangyan Li, Rui Bu, Mingchao Sun, Wei Wu, Xinhan Di, Baoquan Chen
+Evaluate categories separately when comparing with the publication's per-category table, using `--categories chair` or `--categories table`.
 
-## Acknowledgements
+By default, generation uses captions from the test set. Add `--text_prompt "a chair with armrests"` to use one prompt for all generated samples in that evaluation run. This script still loads a reference dataset.
 
-- Thanks to the original open source project author for providing the basic framework and reference implementation.
-- Thanks to all developers who have contributed to the open source community.
+Generated point clouds are saved as `out.npy` in a timestamped directory under `results/`. The script reports MMD-CD, COV-CD, 1-NN-CD and JSD. EMD is not implemented in the current evaluation path.
 
-If you encounter any problems while using or reproducing this project, please [submit an issue](https://github.com/luost26/diffusion-point-cloud/issues) or contact the author.
+Keep the point count, normalization, reference split and sample count consistent across comparisons. Training-time validation scores and final test scores may use different settings.
 
+## Citation
+
+If you use this work, please cite:
+
+```bibtex
+@article{jang2026textconditioned,
+  author  = {Hyunjun Jang and Jung chan-Cho},
+  title   = {Text-Conditioned Diffusion Model for 3D Point Cloud Generation},
+  journal = {The Journal of Korean Institute of Next Generation Computing},
+  year    = {2026},
+  volume  = {22},
+  number  = {3},
+  pages   = {101--116},
+  doi     = {10.23019/kingpc.22.3.202606.007}
+}
+```
+
+## Acknowledgements and license
+
+This project builds on [Diffusion Probabilistic Models for 3D Point Cloud Generation](https://arxiv.org/abs/2103.01458) by Shitong Luo and Wei Hu and the [original implementation](https://github.com/luost26/diffusion-point-cloud).
+
+The repository retains the original [MIT License](LICENSE) and copyright notice.
+
+Questions about this implementation can be raised in [this repository's issue tracker](https://github.com/Hyunjun0716/3Dpartsupervison/issues).
